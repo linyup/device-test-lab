@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Device Test Lab</title>
+  <style>
+    :root { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17212b; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { height: 58px; background: #fff; border-bottom: 1px solid #e1e6eb; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; }
+    header strong { font-size: 17px; }
+    main { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid #dfe4e9; }
+    .tabs button { color: #506070; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 10px 14px; }
+    .tabs button.active { color: #1668dc; border-bottom-color: #1668dc; }
+    h1 { font-size: 26px; margin: 0; letter-spacing: 0; }
+    button { border: 1px solid #1668dc; background: #1668dc; color: white; padding: 9px 14px; font: inherit; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e1e6eb; }
+    th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid #edf0f3; font-size: 14px; }
+    th { color: #5d6b78; font-weight: 600; background: #fafbfc; }
+    .status { font-weight: 600; }
+    .passed { color: #168357; } .failed { color: #c33c3c; } .running { color: #1668dc; }
+    dialog { width: min(520px, calc(100vw - 32px)); border: 1px solid #d9dfe6; padding: 22px; box-shadow: 0 20px 50px rgb(0 0 0 / 18%); }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #bdc7d1; font: inherit; }
+    menu { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 0 0; margin: 0; }
+    menu button:first-child { color: #263442; background: white; border-color: #bdc7d1; }
+    .empty { padding: 48px; text-align: center; color: #6d7985; }
+    #auth { display: flex; align-items: center; gap: 8px; }
+    #token { width: 210px; margin: 0; padding: 7px 9px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header><strong>Device Test Lab</strong><div id="auth"><input id="token" type="password" placeholder="API token (optional)"><button id="save-token">Save</button></div></header>
+  <main>
+    <div class="tabs"><button class="active" data-view="task-view">Execution tasks</button><button data-view="case-view">Case sets</button></div>
+    <section id="task-view">
+      <div class="toolbar"><h1>Execution tasks</h1><button id="new-task">New task</button></div>
+      <table><thead><tr><th>Flow</th><th>Platform</th><th>Status</th><th>Attempt</th><th>Task ID</th></tr></thead><tbody id="tasks"></tbody></table>
+    </section>
+    <section id="case-view" class="hidden">
+      <div class="toolbar"><h1>Case sets</h1><span>Published through the preview and commit API</span></div>
+      <table><thead><tr><th>Module</th><th>Title</th><th>Scenarios</th><th>Version</th><th>Updated</th></tr></thead><tbody id="case-sets"></tbody></table>
+    </section>
+  </main>
+  <dialog id="dialog">
+    <form id="form">
+      <h2>New task</h2>
+      <label for="flow">Flow reference</label><input id="flow" required value="examples/create-note.flow.json">
+      <label for="platform">Platform</label><select id="platform"><option>desktop</option><option>android</option><option>ios</option><option>any</option></select>
+      <menu><button type="button" id="close">Cancel</button><button type="submit">Create</button></menu>
+    </form>
+  </dialog>
+  <script>
+    const body = document.querySelector('#tasks');
+    const caseBody = document.querySelector('#case-sets');
+    const dialog = document.querySelector('#dialog');
+    const tokenInput = document.querySelector('#token');
+    tokenInput.value = localStorage.getItem('device-lab-token') || '';
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
+    const headers = (json = false) => ({...(json ? {'Content-Type': 'application/json'} : {}), ...(tokenInput.value ? {'Authorization': `Bearer ${tokenInput.value}`} : {})});
+    async function load() {
+      const response = await fetch('/api/v1/tasks', {headers: headers()});
+      if (!response.ok) { body.innerHTML = `<tr><td colspan="5" class="empty">API access failed (${response.status}). Check the token.</td></tr>`; return; }
+      const tasks = await response.json();
+      body.innerHTML = tasks.length ? tasks.map(task => `<tr><td>${escapeHtml(task.flow_ref)}</td><td>${escapeHtml(task.platform)}</td><td class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</td><td>${Number(task.attempt)}</td><td>${escapeHtml(task.id)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No tasks yet</td></tr>';
+    }
+    async function loadCases() {
+      const response = await fetch('/api/v1/case-sets', {headers: headers()});
+      if (!response.ok) { caseBody.innerHTML = `<tr><td colspan="5" class="empty">API access failed (${response.status}). Check the token.</td></tr>`; return; }
+      const sets = await response.json();
+      const count = set => (set.content.groups || []).reduce((total, group) => total + (group.scenarios || []).length, 0);
+      caseBody.innerHTML = sets.length ? sets.map(set => `<tr><td>${escapeHtml(set.module)}</td><td>${escapeHtml(set.title)}</td><td>${count(set)}</td><td>${Number(set.version)}</td><td>${escapeHtml(new Date(set.updated_at_ms).toLocaleString())}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No published case sets yet</td></tr>';
+    }
+    document.querySelector('#save-token').onclick = () => { localStorage.setItem('device-lab-token', tokenInput.value); load(); loadCases(); };
+    document.querySelectorAll('.tabs button').forEach(button => button.onclick = () => {
+      document.querySelectorAll('.tabs button').forEach(item => item.classList.toggle('active', item === button));
+      document.querySelectorAll('main > section').forEach(section => section.classList.toggle('hidden', section.id !== button.dataset.view));
+      if (button.dataset.view === 'case-view') loadCases();
+    });
+    document.querySelector('#new-task').onclick = () => dialog.showModal();
+    document.querySelector('#close').onclick = () => dialog.close();
+    document.querySelector('#form').onsubmit = async event => {
+      event.preventDefault();
+      await fetch('/api/v1/tasks', {method: 'POST', headers: headers(true), body: JSON.stringify({flow_ref: document.querySelector('#flow').value, platform: document.querySelector('#platform').value})});
+      dialog.close(); await load();
+    };
+    load(); setInterval(() => { load(); if (!document.querySelector('#case-view').classList.contains('hidden')) loadCases(); }, 3000);
+  </script>
+</body>
+</html>
