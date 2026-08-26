@@ -31,14 +31,28 @@
 
 ## 架构
 
-```text
-Web 控制台 / API Client
-           ↓
-        FastAPI
-        ├─ 任务服务 → Lease Scheduler → SQLite
-        └─ 用例服务 → Preview / Commit / Undo
-                                      ↑
-执行 Agent → Cross-platform Flow Runner
+```mermaid
+flowchart TB
+    A["Web 控制台 / API Client"] --> B["FastAPI 控制平面"]
+    B --> C["任务服务"]
+    B --> D["用例资产服务"]
+    C --> E["Lease Scheduler"]
+    E --> F[("SQLite WAL")]
+    D --> G["Preview / Commit / Undo"]
+    G --> F
+    H["桌面端 / Android / iOS Agent"] -->|领取、续租、回传| C
+    H --> I["Cross-platform Flow Runner"]
+    I --> J["浏览器或测试设备"]
+    K["AI Test Case Skill"] -->|发布草稿| D
+
+    subgraph ProductionAdapters["生产环境可替换适配器"]
+      L["Java 数据服务 / PostgreSQL / MySQL"]
+      M["OIDC / 企业认证"]
+      N["对象存储与可观测性"]
+    end
+    B -.-> M
+    F -.-> L
+    B -.-> N
 ```
 
 ## 快速开始
