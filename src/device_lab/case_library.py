@@ -61,6 +61,85 @@ class CaseLibrary:
             raise LookupError(case_set_id)
         return self._set(row)
 
+    def list_publications(self, limit: int = 20) -> list[dict]:
+        rows = self.connection.execute(
+            "SELECT operation_id,target,preview,status,created_at_ms,committed_at_ms,undone_at_ms "
+            "FROM case_publications ORDER BY created_at_ms DESC LIMIT ?",
+            (max(1, min(limit, 100)),),
+        ).fetchall()
+        return [
+            {
+                "operation_id": row["operation_id"],
+                "target": json.loads(row["target"]),
+                "summary": json.loads(row["preview"])["summary"],
+                "status": row["status"],
+                "created_at_ms": row["created_at_ms"],
+                "committed_at_ms": row["committed_at_ms"],
+                "undone_at_ms": row["undone_at_ms"],
+            }
+            for row in rows
+        ]
+
+    def seed_demo(self) -> dict:
+        existing = self.connection.execute("SELECT id FROM case_sets WHERE deleted_at_ms IS NULL LIMIT 1").fetchone()
+        if existing:
+            return {"created": False, "case_set_id": existing["id"]}
+        payload = {
+            "schema_version": 1,
+            "title": "Notes full regression",
+            "module": "Notes",
+            "groups": [
+                {
+                    "title": "Create and edit",
+                    "scenarios": [
+                        {
+                            "id": "demo-create-note",
+                            "title": "Create and save a note",
+                            "priority": "P0",
+                            "tags": ["smoke", "regression"],
+                            "preconditions": ["The user is signed in"],
+                            "steps": [
+                                {
+                                    "action": "Enter a title and body, then save the note",
+                                    "assertions": ["The note appears in the list", "The saved content is preserved after reopening"],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "demo-edit-note",
+                            "title": "Edit an existing note",
+                            "priority": "P1",
+                            "tags": ["regression"],
+                            "preconditions": ["An editable note exists"],
+                            "steps": [
+                                {"action": "Change the note title", "assertions": ["The new title is displayed in the editor"]},
+                                {"action": "Save and return to the list", "assertions": ["The list shows the new title", "The modification time is updated"]},
+                            ],
+                        },
+                    ],
+                },
+                {
+                    "title": "Resilience",
+                    "scenarios": [
+                        {
+                            "id": "demo-offline-note",
+                            "title": "Continue editing after reconnecting",
+                            "priority": "P1",
+                            "tags": ["network", "regression"],
+                            "preconditions": ["A note is open"],
+                            "steps": [
+                                {"action": "Disconnect the network and edit the note", "assertions": ["The draft remains visible"]},
+                                {"action": "Reconnect the network", "assertions": ["The draft is synchronized", "No duplicate note is created"]},
+                            ],
+                        }
+                    ],
+                },
+            ],
+        }
+        preview = self.preview(payload, {"mode": "new_case_set", "module": "Notes", "title": "Full regression"})
+        committed = self.commit(preview["operation_id"], preview["operation_id"])
+        return {"created": True, **committed}
+
     @staticmethod
     def _set(row) -> dict:
         return {

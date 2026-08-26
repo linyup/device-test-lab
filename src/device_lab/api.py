@@ -59,7 +59,7 @@ def task_dict(task) -> dict:
     return value
 
 
-def create_app(database_path: Path | str | None = None, api_token: str | None = None) -> FastAPI:
+def create_app(database_path: Path | str | None = None, api_token: str | None = None, demo_mode: bool = False) -> FastAPI:
     database = database_path or os.environ.get("DEVICE_LAB_DATABASE", "device-lab.db")
     expected_token = api_token if api_token is not None else os.environ.get("DEVICE_LAB_TOKEN", "")
     scheduler = Scheduler(SqliteTaskRepository(database))
@@ -67,6 +67,7 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
     app = FastAPI(title="Device Test Lab", version="0.1.0")
     app.state.scheduler = scheduler
     app.state.case_library = case_library
+    app.state.demo_mode = demo_mode
 
     def authorize(authorization: str | None) -> None:
         if expected_token and authorization != f"Bearer {expected_token}":
@@ -80,6 +81,28 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
     def list_tasks(authorization: str | None = Header(default=None)):
         authorize(authorization)
         return [task_dict(task) for task in scheduler.repository.all()]
+
+    @app.get("/api/v1/overview")
+    def overview(authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        tasks = [task_dict(task) for task in scheduler.repository.all()]
+        case_sets = case_library.list_sets()
+        return {
+            "tasks": {
+                "total": len(tasks),
+                "queued": sum(task["status"] == "queued" for task in tasks),
+                "running": sum(task["status"] == "running" for task in tasks),
+                "passed": sum(task["status"] == "passed" for task in tasks),
+                "failed": sum(task["status"] == "failed" for task in tasks),
+            },
+            "case_sets": len(case_sets),
+            "scenarios": sum(
+                len(group.get("scenarios", []))
+                for case_set in case_sets
+                for group in case_set["content"].get("groups", [])
+            ),
+            "recent_tasks": tasks[-5:][::-1],
+        }
 
     @app.post("/api/v1/tasks", status_code=202)
     def submit(request: SubmitRequest, authorization: str | None = Header(default=None)):
@@ -140,6 +163,23 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
         except LookupError as error:
             raise HTTPException(404, "case set not found") from error
 
+    @app.get("/api/v1/case-publications")
+    def list_publications(limit: int = Query(default=20, ge=1, le=100), authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return case_library.list_publications(limit)
+
+    @app.post("/api/v1/demo/seed")
+    def seed_demo(authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        if not app.state.demo_mode:
+            raise HTTPException(404, "demo mode is disabled")
+        case_result = case_library.seed_demo()
+        if not scheduler.repository.all():
+            scheduler.submit("examples/create-note.flow.json", "desktop", labels={"suite": "smoke"})
+            scheduler.submit("examples/create-note.flow.json", "android", labels={"suite": "regression"})
+            scheduler.submit("examples/create-note.flow.json", "ios", labels={"suite": "regression"})
+        return {"case_library": case_result, "tasks": len(scheduler.repository.all())}
+
     @app.post("/api/v1/case-publications/preview")
     def preview_publication(request: PublicationPreviewRequest, authorization: str | None = Header(default=None)):
         authorize(authorization)
@@ -181,5 +221,12 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
 def run() -> None:
     import uvicorn
 
-    uvicorn.run(create_app(), host=os.environ.get("DEVICE_LAB_HOST", "127.0.0.1"), port=int(os.environ.get("DEVICE_LAB_PORT", "8877")))
-
+    demo_mode = os.environ.get("DEVICE_LAB_DEMO", "1").lower() not in {"0", "false", "no"}
+    app = create_app(demo_mode=demo_mode)
+    if demo_mode:
+        app.state.case_library.seed_demo()
+        if not app.state.scheduler.repository.all():
+            app.state.scheduler.submit("examples/create-note.flow.json", "desktop", labels={"suite": "smoke"})
+            app.state.scheduler.submit("examples/create-note.flow.json", "android", labels={"suite": "regression"})
+            app.state.scheduler.submit("examples/create-note.flow.json", "ios", labels={"suite": "regression"})
+    uvicorn.run(app, host=os.environ.get("DEVICE_LAB_HOST", "127.0.0.1"), port=int(os.environ.get("DEVICE_LAB_PORT", "8877")))

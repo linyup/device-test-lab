@@ -1,94 +1,70 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
   <title>Device Test Lab</title>
-  <style>
-    :root { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17212b; background: #f4f6f8; }
-    * { box-sizing: border-box; }
-    body { margin: 0; }
-    header { height: 58px; background: #fff; border-bottom: 1px solid #e1e6eb; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; }
-    header strong { font-size: 17px; }
-    main { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
-    .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-    .tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid #dfe4e9; }
-    .tabs button { color: #506070; border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 10px 14px; }
-    .tabs button.active { color: #1668dc; border-bottom-color: #1668dc; }
-    h1 { font-size: 26px; margin: 0; letter-spacing: 0; }
-    button { border: 1px solid #1668dc; background: #1668dc; color: white; padding: 9px 14px; font: inherit; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; background: white; border: 1px solid #e1e6eb; }
-    th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid #edf0f3; font-size: 14px; }
-    th { color: #5d6b78; font-weight: 600; background: #fafbfc; }
-    .status { font-weight: 600; }
-    .passed { color: #168357; } .failed { color: #c33c3c; } .running { color: #1668dc; }
-    dialog { width: min(520px, calc(100vw - 32px)); border: 1px solid #d9dfe6; padding: 22px; box-shadow: 0 20px 50px rgb(0 0 0 / 18%); }
-    label { display: block; margin: 14px 0 6px; font-weight: 600; }
-    input, select { width: 100%; padding: 10px; border: 1px solid #bdc7d1; font: inherit; }
-    menu { display: flex; justify-content: flex-end; gap: 8px; padding: 18px 0 0; margin: 0; }
-    menu button:first-child { color: #263442; background: white; border-color: #bdc7d1; }
-    .empty { padding: 48px; text-align: center; color: #6d7985; }
-    #auth { display: flex; align-items: center; gap: 8px; }
-    #token { width: 210px; margin: 0; padding: 7px 9px; }
-    .hidden { display: none; }
-  </style>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/import.css">
 </head>
 <body>
-  <header><strong>Device Test Lab</strong><div id="auth"><input id="token" type="password" placeholder="API token (optional)"><button id="save-token">Save</button></div></header>
+  <aside class="sidebar">
+    <a class="brand" href="#overview" aria-label="Device Test Lab 首页">
+      <span class="brand-mark">DT</span><span><strong>Device Test Lab</strong><small>Quality control plane</small></span>
+    </a>
+    <nav aria-label="主导航">
+      <button class="nav-item active" data-view="overview"><span class="nav-icon">⌂</span>概览</button>
+      <button class="nav-item" data-view="tasks"><span class="nav-icon">▶</span>执行任务</button>
+      <button class="nav-item" data-view="devices"><span class="nav-icon">▣</span>设备资源</button>
+      <button class="nav-item" data-view="cases"><span class="nav-icon">⌘</span>测试用例</button>
+      <button class="nav-item" data-view="publications"><span class="nav-icon">↗</span>发布记录</button>
+    </nav>
+    <div class="sidebar-foot"><span class="live-dot"></span><span>Local workspace</span><button id="settings" title="连接设置">•••</button></div>
+  </aside>
+
   <main>
-    <div class="tabs"><button class="active" data-view="task-view">Execution tasks</button><button data-view="case-view">Case sets</button></div>
-    <section id="task-view">
-      <div class="toolbar"><h1>Execution tasks</h1><button id="new-task">New task</button></div>
-      <table><thead><tr><th>Flow</th><th>Platform</th><th>Status</th><th>Attempt</th><th>Task ID</th></tr></thead><tbody id="tasks"></tbody></table>
+    <header class="topbar">
+      <div><p class="eyebrow" id="eyebrow">WORKSPACE</p><h1 id="page-title">测试工作台</h1></div>
+      <div class="top-actions"><button class="button ghost" id="refresh">刷新</button><button class="button primary" id="primary-action">新建任务</button></div>
+    </header>
+    <div id="notice" class="notice hidden" role="status"></div>
+
+    <section class="view active" id="view-overview">
+      <div class="metric-grid" id="metrics"></div>
+      <div class="content-grid">
+        <article class="panel span-2"><div class="panel-head"><div><h2>最近执行</h2><p>实时查看任务状态与运行结果</p></div><button class="text-button" data-go="tasks">查看全部</button></div><div id="recent-tasks"></div></article>
+        <article class="panel"><div class="panel-head"><div><h2>运行环境</h2><p>公开版默认使用模拟设备</p></div></div><div id="environment"></div></article>
+      </div>
     </section>
-    <section id="case-view" class="hidden">
-      <div class="toolbar"><h1>Case sets</h1><span>Published through the preview and commit API</span></div>
-      <table><thead><tr><th>Module</th><th>Title</th><th>Scenarios</th><th>Version</th><th>Updated</th></tr></thead><tbody id="case-sets"></tbody></table>
+
+    <section class="view" id="view-tasks">
+      <article class="panel"><div class="panel-head table-tools"><div><h2>执行任务</h2><p>Flow 与每次运行记录分离管理</p></div><div class="filter"><input id="task-search" placeholder="搜索 Flow 或任务 ID"><select id="task-status"><option value="">全部状态</option><option>queued</option><option>running</option><option>passed</option><option>failed</option><option>canceled</option></select></div></div><div class="table-wrap"><table><thead><tr><th>任务</th><th>运行平台</th><th>状态</th><th>尝试</th><th>创建时间</th><th></th></tr></thead><tbody id="tasks"></tbody></table></div></article>
+    </section>
+
+    <section class="view" id="view-devices">
+      <div class="device-grid" id="devices"></div>
+    </section>
+
+    <section class="view" id="view-cases">
+      <div class="case-layout">
+        <aside class="case-sidebar panel"><div class="panel-head"><div><h2>用例资产</h2><p>按模块与用例集维护</p></div></div><div id="case-sets" class="case-set-list"></div></aside>
+        <article class="panel case-workspace">
+          <div id="case-empty" class="empty-state"><span class="empty-icon">⌘</span><h2>选择一个用例集</h2><p>查看脑图结构、步骤、预期结果和标签。</p></div>
+          <div id="case-detail" class="hidden"><div class="case-detail-head"><div><span class="module-label" id="case-module"></span><h2 id="case-title"></h2><p id="case-meta"></p></div><div class="segmented"><button class="active" data-case-mode="map">脑图</button><button data-case-mode="list">列表</button></div></div><div id="case-map" class="mindmap"></div><div id="case-list" class="hidden"></div></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="view-publications">
+      <article class="panel"><div class="panel-head"><div><h2>发布记录</h2><p>每次预览、提交与撤销都有迹可循</p></div></div><div class="table-wrap"><table><thead><tr><th>目标</th><th>变更摘要</th><th>状态</th><th>创建时间</th><th>操作 ID</th></tr></thead><tbody id="publications"></tbody></table></div></article>
     </section>
   </main>
-  <dialog id="dialog">
-    <form id="form">
-      <h2>New task</h2>
-      <label for="flow">Flow reference</label><input id="flow" required value="examples/create-note.flow.json">
-      <label for="platform">Platform</label><select id="platform"><option>desktop</option><option>android</option><option>ios</option><option>any</option></select>
-      <menu><button type="button" id="close">Cancel</button><button type="submit">Create</button></menu>
-    </form>
-  </dialog>
-  <script>
-    const body = document.querySelector('#tasks');
-    const caseBody = document.querySelector('#case-sets');
-    const dialog = document.querySelector('#dialog');
-    const tokenInput = document.querySelector('#token');
-    tokenInput.value = localStorage.getItem('device-lab-token') || '';
-    const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[character]));
-    const headers = (json = false) => ({...(json ? {'Content-Type': 'application/json'} : {}), ...(tokenInput.value ? {'Authorization': `Bearer ${tokenInput.value}`} : {})});
-    async function load() {
-      const response = await fetch('/api/v1/tasks', {headers: headers()});
-      if (!response.ok) { body.innerHTML = `<tr><td colspan="5" class="empty">API access failed (${response.status}). Check the token.</td></tr>`; return; }
-      const tasks = await response.json();
-      body.innerHTML = tasks.length ? tasks.map(task => `<tr><td>${escapeHtml(task.flow_ref)}</td><td>${escapeHtml(task.platform)}</td><td class="status ${escapeHtml(task.status)}">${escapeHtml(task.status)}</td><td>${Number(task.attempt)}</td><td>${escapeHtml(task.id)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No tasks yet</td></tr>';
-    }
-    async function loadCases() {
-      const response = await fetch('/api/v1/case-sets', {headers: headers()});
-      if (!response.ok) { caseBody.innerHTML = `<tr><td colspan="5" class="empty">API access failed (${response.status}). Check the token.</td></tr>`; return; }
-      const sets = await response.json();
-      const count = set => (set.content.groups || []).reduce((total, group) => total + (group.scenarios || []).length, 0);
-      caseBody.innerHTML = sets.length ? sets.map(set => `<tr><td>${escapeHtml(set.module)}</td><td>${escapeHtml(set.title)}</td><td>${count(set)}</td><td>${Number(set.version)}</td><td>${escapeHtml(new Date(set.updated_at_ms).toLocaleString())}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No published case sets yet</td></tr>';
-    }
-    document.querySelector('#save-token').onclick = () => { localStorage.setItem('device-lab-token', tokenInput.value); load(); loadCases(); };
-    document.querySelectorAll('.tabs button').forEach(button => button.onclick = () => {
-      document.querySelectorAll('.tabs button').forEach(item => item.classList.toggle('active', item === button));
-      document.querySelectorAll('main > section').forEach(section => section.classList.toggle('hidden', section.id !== button.dataset.view));
-      if (button.dataset.view === 'case-view') loadCases();
-    });
-    document.querySelector('#new-task').onclick = () => dialog.showModal();
-    document.querySelector('#close').onclick = () => dialog.close();
-    document.querySelector('#form').onsubmit = async event => {
-      event.preventDefault();
-      await fetch('/api/v1/tasks', {method: 'POST', headers: headers(true), body: JSON.stringify({flow_ref: document.querySelector('#flow').value, platform: document.querySelector('#platform').value})});
-      dialog.close(); await load();
-    };
-    load(); setInterval(() => { load(); if (!document.querySelector('#case-view').classList.contains('hidden')) loadCases(); }, 3000);
-  </script>
+
+  <dialog id="task-dialog"><form id="task-form"><div class="dialog-head"><div><p class="eyebrow">NEW EXECUTION</p><h2>创建执行任务</h2></div><button type="button" class="icon-button" data-close>×</button></div><label>Flow 文件<input id="flow" required value="examples/create-note.flow.json"></label><label>运行平台<select id="platform"><option value="desktop">Desktop</option><option value="android">Android</option><option value="ios">iOS</option><option value="any">自动匹配</option></select></label><div class="dialog-actions"><button type="button" class="button ghost" data-close>取消</button><button class="button primary" type="submit">创建任务</button></div></form></dialog>
+  <dialog id="settings-dialog"><form><div class="dialog-head"><div><p class="eyebrow">CONNECTION</p><h2>本地连接</h2></div><button type="button" class="icon-button" data-close>×</button></div><label>API Token（可选）<input id="token" type="password" autocomplete="off" placeholder="未启用认证时留空"></label><p class="form-help">Token 仅保存在当前浏览器中。</p><div class="dialog-actions"><button type="button" class="button ghost" data-close>取消</button><button type="button" class="button primary" id="save-token">保存</button></div></form></dialog>
+  <dialog id="task-detail-dialog"><div id="task-detail"></div></dialog>
+  <dialog id="import-dialog"><form id="import-form"><div class="dialog-head"><div><p class="eyebrow">REVIEW FIRST</p><h2>发布结构化用例</h2></div><button type="button" class="icon-button" data-close>×</button></div><div class="form-grid"><label>发布方式<select id="import-mode"><option value="new_case_set">新建用例集</option><option value="merge">合并到已有用例集</option></select></label><label id="import-module-label">所属模块<input id="import-module" value="Notes"></label><label id="import-title-label">用例集名称<input id="import-title" value="Iteration regression"></label><label id="import-target-label" class="hidden">目标用例集<select id="import-target"></select></label></div><label>用例树 JSON<textarea id="import-payload" spellcheck="false"></textarea></label><div id="preview-result" class="preview-result hidden"></div><div class="dialog-actions"><button type="button" class="button ghost" id="load-sample">加载示例</button><span class="action-spacer"></span><button type="button" class="button ghost" data-close>取消</button><button type="button" class="button primary" id="preview-import">预览变更</button><button type="submit" class="button primary hidden" id="commit-import">确认发布</button></div></form></dialog>
+  <script src="/static/app.js" defer></script>
 </body>
 </html>

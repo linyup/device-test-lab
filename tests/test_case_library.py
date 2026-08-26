@@ -49,7 +49,16 @@ class CaseLibraryTests(unittest.TestCase):
         self.library.undo(addition["operation_id"])
         self.assertEqual(1, len(self.library.get_set(result["case_set_id"])["content"]["groups"][0]["scenarios"]))
 
+    def test_demo_seed_is_idempotent_and_publication_is_visible(self):
+        first = self.library.seed_demo()
+        second = self.library.seed_demo()
+        self.assertTrue(first["created"])
+        self.assertFalse(second["created"])
+        self.assertEqual(1, len(self.library.list_sets()))
+        publications = self.library.list_publications()
+        self.assertEqual("committed", publications[0]["status"])
+        self.assertEqual(3, publications[0]["summary"]["additions"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
