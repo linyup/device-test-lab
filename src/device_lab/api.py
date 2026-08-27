@@ -13,6 +13,7 @@ from .models import Device
 from .case_library import CaseLibrary
 from .scheduler import Scheduler, TaskConflict, TaskNotFound
 from .sqlite_repository import SqliteTaskRepository
+from .exploration import ExplorationStore
 
 
 class SubmitRequest(BaseModel):
@@ -52,6 +53,17 @@ class PublicationCommitRequest(BaseModel):
     confirmation: str
 
 
+class ExplorationStartRequest(BaseModel):
+    device_id: str
+    platform: str
+    purpose: str = "ai_explore"
+
+
+class ExplorationEventRequest(BaseModel):
+    kind: str
+    payload: dict = Field(default_factory=dict)
+
+
 def task_dict(task) -> dict:
     value = asdict(task)
     value["status"] = task.status.value
@@ -64,10 +76,11 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
     expected_token = api_token if api_token is not None else os.environ.get("DEVICE_LAB_TOKEN", "")
     scheduler = Scheduler(SqliteTaskRepository(database))
     case_library = CaseLibrary(database)
-    app = FastAPI(title="Device Test Lab", version="0.1.0")
+    app = FastAPI(title="Device Test Lab", version="0.3.0")
     app.state.scheduler = scheduler
     app.state.case_library = case_library
     app.state.demo_mode = demo_mode
+    app.state.explorations = ExplorationStore()
 
     def authorize(authorization: str | None) -> None:
         if expected_token and authorization != f"Bearer {expected_token}":
@@ -149,6 +162,47 @@ def create_app(database_path: Path | str | None = None, api_token: str | None = 
             return task_dict(scheduler.cancel(task_id))
         except TaskNotFound as error:
             raise HTTPException(404, "task not found") from error
+
+    @app.post("/api/v1/explorations", status_code=201)
+    def start_exploration(request: ExplorationStartRequest, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return app.state.explorations.serialize(
+            app.state.explorations.start(request.device_id, request.platform, request.purpose)
+        )
+
+    @app.get("/api/v1/explorations/{exploration_id}")
+    def get_exploration(exploration_id: str, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        try:
+            return app.state.explorations.serialize(app.state.explorations.get(exploration_id))
+        except LookupError as error:
+            raise HTTPException(404, "exploration not found") from error
+
+    @app.post("/api/v1/explorations/{exploration_id}/events", status_code=201)
+    def append_exploration_event(exploration_id: str, request: ExplorationEventRequest, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        try:
+            return asdict(app.state.explorations.append(exploration_id, request.kind, request.payload))
+        except LookupError as error:
+            raise HTTPException(404, "exploration not found") from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+
+    @app.post("/api/v1/explorations/{exploration_id}/complete")
+    def complete_exploration(exploration_id: str, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        try:
+            return app.state.explorations.serialize(app.state.explorations.finish(exploration_id, "completed"))
+        except LookupError as error:
+            raise HTTPException(404, "exploration not found") from error
+
+    @app.post("/api/v1/explorations/{exploration_id}/discard")
+    def discard_exploration(exploration_id: str, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        try:
+            return app.state.explorations.serialize(app.state.explorations.finish(exploration_id, "discarded"))
+        except LookupError as error:
+            raise HTTPException(404, "exploration not found") from error
 
     @app.get("/api/v1/case-sets")
     def list_case_sets(authorization: str | None = Header(default=None)):

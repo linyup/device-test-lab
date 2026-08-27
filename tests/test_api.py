@@ -70,6 +70,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual("undone", undone.json()["status"])
         self.assertEqual([], self.client.get("/api/v1/case-sets", headers=self.headers).json())
 
+    def test_exploration_timeline_is_isolated_from_tasks(self):
+        started = self.client.post(
+            "/api/v1/explorations", headers=self.headers,
+            json={"device_id": "android-demo", "platform": "android", "purpose": "flow_repair"},
+        ).json()
+        exploration_id = started["id"]
+        event = self.client.post(
+            f"/api/v1/explorations/{exploration_id}/events", headers=self.headers,
+            json={"kind": "tool_result", "payload": {"command_success": True, "evidence_success": False}},
+        ).json()
+        self.assertEqual(1, event["sequence"])
+        completed = self.client.post(f"/api/v1/explorations/{exploration_id}/complete", headers=self.headers).json()
+        self.assertEqual("completed", completed["status"])
+        self.assertEqual([], self.client.get("/api/v1/tasks", headers=self.headers).json())
+
 
 if __name__ == "__main__":
     unittest.main()
